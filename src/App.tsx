@@ -5,8 +5,20 @@ import { PresetPanel } from "./app/PresetPanel";
 import { Switcher } from "./app/Switcher";
 import { RenderBoundary } from "./app/RenderBoundary";
 import { ChromeToggle } from "./app/ChromeToggle";
+import { GithubLink } from "./app/GithubLink";
 import { defaultsOf, type Shelf } from "./app/shelf";
 import "./App.css";
+
+const cornerBL: React.CSSProperties = {
+  position: "fixed",
+  left: 10,
+  bottom: 10,
+  zIndex: 1000,
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "flex-start",
+  gap: 8,
+};
 
 function ShelfHost({ shelf, chrome }: { shelf: Shelf; chrome: boolean }) {
   // namespaced by shelf id — leva keys are global, so both shelves having a
@@ -72,7 +84,12 @@ export default function App() {
       {/* keyed by id so switching direction remounts rather than trying to
           reconcile two completely unrelated renderers */}
       <ShelfHost key={shelf.id} shelf={shelf} chrome={chrome} />
-      {chrome && <Switcher shelves={SHELVES} activeId={shelf.id} onPick={setId} />}
+      {/* bottom-left stack: the source link rides above the switcher, and
+          survives hiding the tooling the same way the chrome toggle does */}
+      <div style={cornerBL}>
+        <GithubLink />
+        {chrome && <Switcher shelves={SHELVES} activeId={shelf.id} onPick={setId} />}
+      </div>
       <ChromeToggle on={chrome} onToggle={() => setChrome((c) => !c)} />
     </>
   );

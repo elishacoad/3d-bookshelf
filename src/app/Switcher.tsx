@@ -33,10 +33,6 @@ export function Switcher({
 
 const S: Record<string, React.CSSProperties> = {
   bar: {
-    position: "fixed",
-    left: 10,
-    bottom: 10,
-    zIndex: 1000,
     display: "flex",
     flexDirection: "column",
     alignItems: "flex-start",
