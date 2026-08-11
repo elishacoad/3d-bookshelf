@@ -1,0 +1,56 @@
+/* Direction B — the page is only chrome; everything else is in the canvas. */
+
+.shelfg {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  color: #f4f1ea;
+}
+
+.shelfg-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+/* the scene paints its own ground, so the chrome has to survive both a bone
+   page and a nocturne one — difference blending keeps it legible either way */
+.shelfg-mast,
+.shelfg-caption {
+  position: absolute;
+  left: 32px;
+  right: 32px;
+  mix-blend-mode: difference;
+  pointer-events: none;
+}
+
+.shelfg-mast {
+  top: 26px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.shelfg-caption {
+  bottom: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  opacity: 0.35;
+  transition: opacity 300ms ease;
+}
+.shelfg-caption[data-on="true"] { opacity: 1; }
+.shelfg-caption-title {
+  font-family: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+.shelfg-caption-meta {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}

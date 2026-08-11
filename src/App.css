@@ -1,0 +1,11 @@
+/* Global scope is intentionally almost empty: each shelf owns its own layout,
+   chrome, and stylesheet so nothing bleeds between the two directions. */
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: #fdfcfb;
+  -webkit-font-smoothing: antialiased;
+}

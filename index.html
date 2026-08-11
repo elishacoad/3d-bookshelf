@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bookshelf — CSS 3D vs. WebGL</title>
+    <meta
+      name="description"
+      content="An interactive 3D bookshelf built twice, once in CSS and once in WebGL, to compare what each approach costs."
+    />
+  </head>
+  <body>
+    <!--
+      The entrance layer is scoped under [data-motion="on"]. This runs inline,
+      before first paint, and only sets the flag when JS is alive and the
+      visitor hasn't asked for reduced motion. If either is false the hidden
+      state never applies and the shelf renders complete — nothing to suppress,
+      rather than an animation racing itself to 0ms.
+
+      (This app is client-rendered, so "no JS" means a blank page regardless.
+      The script earns its keep on the reduced-motion half, and keeps the gate
+      in one place if the shelf is ever server-rendered.)
+    -->
+    <script>
+      (function () {
+        try {
+          if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+            document.documentElement.setAttribute("data-motion", "on");
+          }
+        } catch (e) {
+          /* no matchMedia — leave motion off, the shelf still renders */
+        }
+      })();
+    </script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

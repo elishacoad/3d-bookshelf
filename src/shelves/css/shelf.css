@@ -1,0 +1,659 @@
+/* Direction A — DOM boxes under preserve-3d.
+ *
+ * Box convention, used by every face rule below:
+ *   X = --t  spine thickness      +X front cover  -X back board
+ *   Y = --h  book height          +Y bottom       -Y top edge
+ *   Z = --w  cover width          +Z spine        -Z fore-edge (pages)
+ *
+ * At rest the spine faces the viewer. Yawing a book -90deg swings the front
+ * cover round, and lands the spine on the *left* edge — which is where an
+ * English-bound book keeps it. Turning the other way would show you the cover
+ * of a book shelved backwards. */
+
+.shelfc {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  color: var(--fg);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+.shelfc-mast {
+  display: flex;
+  justify-content: space-between;
+  padding: 26px 32px 0;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+.shelfc-mast-role { opacity: 0.7; }
+
+/* ---- stage -------------------------------------------------------------- */
+
+.shelfc-stage {
+  /* one shared vanishing point for the whole shelf. this is the line doing the
+     heavy lifting: every spine shears differently around it as the cursor
+     moves, which is what reads as depth rather than as a row of hovering
+     rectangles. */
+  perspective-origin: calc(50% + var(--px, 0) * var(--par-x) * 1%)
+    calc(50% + var(--py, 0) * var(--par-y) * 1%);
+  display: grid;
+  place-items: center;
+  min-height: 0;
+}
+
+.shelfc-world {
+  position: relative;
+  transform-style: preserve-3d;
+}
+
+.shelfc-row {
+  display: flex;
+  align-items: flex-end;
+  transform-style: preserve-3d;
+}
+
+/* ---- entrance ------------------------------------------------------------
+ *
+ * Declarative: each place carries data-reveal="pending", a kind, and its own
+ * delay. One effect flips pending -> done and these transitions run. No
+ * per-book JS, no animation library.
+ *
+ * The whole layer is scoped under [data-motion="on"] (see index.html). Without
+ * that flag the pending rule never matches, so there is no hidden state to
+ * undo — the shelf just renders finished.
+ *
+ * `.shelfc-place` exists purely to own the entrance. transition-property is
+ * one list per element, and declaring this on the slot would replace the list
+ * the pull animation depends on. One element per concern. It also takes over
+ * as the flex item, which is why the lean spacing margin moved onto it. */
+
+.shelfc-place {
+  flex: 0 0 auto;
+  /* without this the wrapper flattens the book's 3D subtree back into a plane */
+  transform-style: preserve-3d;
+}
+
+/* The base rule declares a four-property shorthand. The `place` kind below
+   narrows transition-property to two; the duration/easing/delay lists stay
+   four long and cycle over the shorter list. All four values are the same, so
+   it lands correctly however they pair up. */
+[data-motion="on"] .shelfc-place[data-reveal] {
+  transition:
+    opacity var(--reveal-dur) var(--reveal-ease) var(--reveal-delay),
+    translate var(--reveal-dur) var(--reveal-ease) var(--reveal-delay),
+    rotate var(--reveal-dur) var(--reveal-ease) var(--reveal-delay),
+    scale var(--reveal-dur) var(--reveal-ease) var(--reveal-delay);
+}
+
+[data-motion="on"] .shelfc-place[data-reveal-kind="place"] {
+  transition-property: translate, opacity;
+}
+
+/* Downward into place, not up from below. Nothing here clips, so a book rising
+   into position spends the whole entrance sticking through the plank.
+ *
+ * `translate` rather than `transform` on purpose. The individual transform
+ * properties compose with `transform` instead of replacing it and resolve
+ * about the same origin, so this layers on top of the open/close state machine
+ * without touching it — and the slot's `transform` stays entirely the
+ * machine's. */
+[data-motion="on"] .shelfc-place[data-reveal="pending"][data-reveal-kind="place"] {
+  translate: 0 calc(var(--reveal-drop) * -1);
+}
+
+/* Opacity below 1 flattens a preserve-3d subtree: for the length of the fade a
+   book stops being a box and becomes its six faces painted into one plane in
+   DOM order. That is invisible only when the resting pose is square-on.
+ *
+ * Measured on this shelf, by holding every place at opacity 0.99 — enough to
+ * flatten, too little to see as dimming — and diffing the frame:
+ *
+ *   orthographic, eyeHeight 0, lean 0   pixel-identical
+ *   the default perspective view        the whole row collapses
+ *
+ * Under perspective the books lose their shear and the row visibly narrows,
+ * because the shared vanishing point is exactly what flattening throws away.
+ * So the fade is opt-in and off by default. Turn it on for a square-on
+ * elevation; leave it off for anything with a vanishing point in it. */
+[data-motion="on"] .shelfc-place[data-reveal="pending"][data-fade="true"] {
+  opacity: 0;
+}
+
+/* ---- one book ----------------------------------------------------------- */
+
+/* Opening and closing get their own clocks. Rather than thread two pairs of
+   values through every rule below, the slot swaps which pair `--dur`/`--ease`/
+   `--tdelay` point at, and everything downstream inherits. A transition reads
+   its timing at the moment the state flips, so the outgoing move picks up the
+   close pair from the base rule and the incoming one picks up the open pair. */
+.shelfc-slot {
+  --dur: var(--dur-close);
+  --ease: var(--ease-close);
+  --tdelay: var(--tdelay-close);
+}
+.shelfc-slot[data-on="true"] {
+  --dur: var(--dur-open);
+  --ease: var(--ease-open);
+  --tdelay: var(--tdelay-open);
+}
+
+/* the slot carries the travel — pull, sidestep, lift */
+.shelfc-slot {
+  position: relative;
+  width: var(--t);
+  height: var(--h);
+  /* Explicit, so the slot's box doesn't depend on what its parent happens to
+     be. A div is blockified as a direct flex child but is inline-level once
+     wrapped, and an inline-level box sits on a text baseline — the line box
+     then reserves descender space beneath it, which against the row's
+     `align-items: flex-end` lifts every book off the plank. The slot *is* that
+     <button> now, so this is load-bearing rather than defensive. */
+  display: block;
+  /* the rest of the button reset. a spine is a control, but none of the
+     platform chrome that comes with one survives being a face of a 3D box */
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  transform-style: preserve-3d;
+  /* pivot at the base, not the centre: a book leans on the corner it's standing
+     on. rotating about the middle would sink the low corner through the board,
+     and scale would grow the book downward into it too. */
+  transform-origin: 50% 100%;
+  transform: translate3d(calc(var(--shift) * 1px), calc(var(--lift) * -1px), calc(var(--pull) * 1px))
+    scale(var(--zs, 1)) rotate(calc(var(--lean, 0) * 1deg));
+  /* on the way back in, the travel waits for the turn to square up first —
+     but only the travel. a delay set with the standalone `transition-delay`
+     property applies to every transition on the element, which was staggering
+     the dim fade too. */
+  transition: transform var(--dur) var(--ease) var(--tdelay),
+    opacity var(--dur-close) var(--ease-close) 0ms;
+}
+.shelfc-slot[data-on="true"] {
+  transition: transform var(--dur) var(--ease) 0ms,
+    opacity var(--dur-open) var(--ease-open) 0ms;
+}
+
+/* the turn is its own layer purely so it can carry its own delay: a book has
+   to clear the shelf before it rotates, or its cover sweeps straight through
+   the neighbours. splitting travel and turn across two elements is the only
+   way to stagger them — they'd otherwise be one `transform` with one timing. */
+/* the peek nudge rides here rather than on the slot so it stays immediate: the
+   slot's delay is what staggers travel against turn, and a hover cue that
+   waited on it would feel broken */
+.shelfc-turn {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transform: translate3d(0, calc(var(--hint-y, 0) * -1px), calc(var(--hint, 0) * 1px))
+    rotateY(calc(var(--yaw) * -1deg));
+  --tilt-amt: 0;
+  transition: transform var(--dur) var(--ease), --tilt-amt var(--dur) var(--ease);
+  transition-delay: 0ms;
+}
+.shelfc-slot[data-on="true"] .shelfc-turn { --tilt-amt: 1; }
+/* the cue is a much smaller move than the pull, so it wants a much shorter
+   clock — at 520ms a 10px nudge just looks like lag */
+.shelfc-slot[data-peek="true"] .shelfc-turn { transition-duration: 200ms; }
+
+/* in click mode a spine is a target, and has to say so */
+.shelfc-slot[data-click="true"] { cursor: pointer; }
+
+/* The focus ring can't live on the slot.
+   An outline paints on the slot's own box, which sits at the centre of the
+   preserve-3d scene — and the spine face is translated half the cover width
+   toward the viewer, so it covers the ring completely. The ring has to be drawn
+   on the frontmost surface, which is the face itself. */
+.shelfc-slot:focus { outline: none; }
+/* except while notes are up, where every click means "close" */
+.shelfc-stage[data-notes="true"] .shelfc-slot:not([data-on="true"]) { cursor: default; }
+.shelfc-slot[data-on="true"] .shelfc-turn { transition-delay: var(--tdelay); }
+
+/* How much of the cursor lean is in play. Registering it makes a custom
+   property animatable, which is the whole point: the lean's *direction* has to
+   stay live (it tracks the pointer, and transitioning the transform would make
+   the book wade through syrup), but its *magnitude* must not switch on like a
+   light. Applying the lean straight off `[data-on]` snapped the book several
+   degrees in one frame, which flashed the back board and top edge into view as
+   hairlines — visible as a line popping in and out on repeated clicks. */
+@property --tilt-amt {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
+/* the tilt layer itself is still not transitioned — only the amount is */
+.shelfc-book {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transform: rotateY(calc(var(--px, 0) * var(--tilt) * var(--tilt-amt) * 1deg))
+    rotateX(calc(var(--py, 0) * var(--tilt) * var(--tilt-amt) * -0.6deg));
+}
+
+.shelfc-face {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-origin: 50% 50%;
+  backface-visibility: hidden;
+}
+
+/* +Z — the spine */
+.shelfc-spineface {
+  width: var(--t);
+  height: var(--h);
+  transform: translate(-50%, -50%) translateZ(calc(var(--w) / 2));
+  background: var(--spine);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Neighbours touching on both sides. The pulled book fades this out, which is
+   the cheapest convincing bit of the whole illusion — light reaching a surface
+   that just came out of a gap.
+   It lives on a pseudo-element rather than on the face itself because an inset
+   box-shadow paints *below* child content, and artwork is child content: on
+   the face, a photographed spine would sit on top of its own occlusion. */
+.shelfc-spineface::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  box-shadow: inset 5px 0 11px -6px rgba(0, 0, 0, calc(var(--ao) * 0.9)),
+    inset -5px 0 11px -6px rgba(0, 0, 0, calc(var(--ao) * 0.7)),
+    inset 0 -30px 40px -34px rgba(0, 0, 0, calc(var(--ao) * 0.8));
+  transition: box-shadow var(--dur) var(--ease);
+}
+.shelfc-slot[data-on="true"] .shelfc-spineface::after {
+  box-shadow: inset 5px 0 11px -6px rgba(0, 0, 0, calc(var(--ao) * 0.2)),
+    inset -5px 0 11px -6px rgba(0, 0, 0, calc(var(--ao) * 0.15));
+}
+
+/* The keyboard focus ring, on the same overlay layer as the occlusion above and
+   for the same reason: it has to sit over the artwork, not under it.
+   Drawn in the book's own `--ink` rather than one fixed colour. Ink is the
+   spine's type colour, so it is already the one value guaranteed to read
+   against `--spine` — a single hard-coded ring would vanish on the black books
+   or the white ones, depending which colour it was. */
+.shelfc-spineface::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: inset 0 0 0 2px var(--ink), inset 0 0 0 4px var(--spine);
+  transition: opacity 120ms linear;
+}
+.shelfc-slot:focus-visible .shelfc-spineface::before { opacity: 1; }
+
+.shelfc-spine-type {
+  flex: 1;
+  min-height: 0;
+  writing-mode: vertical-rl;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 0;
+  gap: 10px;
+}
+/* US/UK spines read top-to-bottom; flipping the block gives the European
+   bottom-up convention instead */
+.shelfc-spineface[data-dir="bottom-up"] .shelfc-spine-type { transform: rotate(180deg); }
+
+.shelfc-spine-title {
+  font-size: clamp(8px, calc(var(--t) * 0.42), 15px);
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.shelfc-spine-type[data-serif="true"] .shelfc-spine-title {
+  font-family: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.shelfc-spine-author {
+  font-size: clamp(6px, calc(var(--t) * 0.26), 9px);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.62;
+  white-space: nowrap;
+  overflow: hidden;
+  flex-shrink: 1;
+}
+
+/* publisher block at the foot — print furniture, not decoration */
+.shelfc-band {
+  display: block;
+  height: calc(var(--t) * 0.9);
+  margin: 0 22%;
+  margin-bottom: 12px;
+  background: var(--accent);
+  opacity: 0.9;
+}
+
+/* artwork sits on top of the drawn face and covers it completely. the type
+   underneath is the fallback, not a layer meant to show through — which is why
+   this is opaque and full-bleed rather than blended. */
+.shelfc-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  z-index: 1;
+}
+
+/* +X — the front cover */
+.shelfc-cover {
+  width: var(--w);
+  height: var(--h);
+  transform: translate(-50%, -50%) rotateY(90deg) translateZ(calc(var(--t) / 2));
+  background: var(--cover);
+  color: var(--ink);
+  overflow: hidden;
+}
+/* the fake key light: a raking sheen that only pays off once the cover has
+   turned far enough to catch it */
+.shelfc-cover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0) 42%),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.28) 0%, rgba(0, 0, 0, 0) 14%);
+  opacity: var(--sheen);
+  pointer-events: none;
+  z-index: 2;
+}
+.shelfc-cover-inner {
+  position: absolute;
+  inset: 0;
+  padding: 9% 9% 8%;
+  display: flex;
+  flex-direction: column;
+}
+.shelfc-cover-inner h2 {
+  margin: 0;
+  font-size: clamp(16px, calc(var(--w) * 0.115), 40px);
+  line-height: 1.02;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+.shelfc-cover-inner h2[data-serif="true"] {
+  font-family: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.shelfc-cover-inner p {
+  margin: 10px 0 0;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+.shelfc-mark {
+  margin-top: auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  position: relative;
+  opacity: 0.85;
+}
+.shelfc-mark::after {
+  content: "";
+  position: absolute;
+  inset: 42%;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.shelfc-cover-inner small {
+  margin-top: 10px;
+  font-size: 8px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+
+/* -X — back board. plain; it only ever shows as a sliver */
+.shelfc-back {
+  width: var(--w);
+  height: var(--h);
+  transform: translate(-50%, -50%) rotateY(-90deg) translateZ(calc(var(--t) / 2));
+  background: var(--spine);
+  filter: brightness(0.82);
+}
+
+/* -Z — the fore-edge. paper, never the cover colour */
+.shelfc-pages {
+  width: var(--t);
+  height: var(--h);
+  transform: translate(-50%, -50%) rotateY(180deg) translateZ(calc(var(--w) / 2));
+  background: repeating-linear-gradient(90deg, #efe8d8 0 1px, #dcd3bf 1px 2px);
+  filter: brightness(0.9);
+}
+
+/* -Y — the top edge, seen from slightly above. the page block sits inboard of
+   the covers, so the two board edges bracket a paler middle */
+.shelfc-top {
+  width: var(--t);
+  height: var(--w);
+  transform: translate(-50%, -50%) rotateX(90deg) translateZ(calc(var(--h) / 2));
+  background: linear-gradient(
+    90deg,
+    var(--spine) 0 12%,
+    #e9e1cf 12% 88%,
+    var(--spine) 88% 100%
+  );
+  filter: brightness(0.94);
+}
+
+/* ---- shelf furniture ---------------------------------------------------- */
+
+/* The board.
+ *
+ * A book's spine face sits at +--w/2, half a cover-width in FRONT of the row's
+ * own plane — so a plank starting at z=0 leaves the front half of every book
+ * hanging over nothing. `--front` pushes the board out past the deepest spine
+ * first, and the top surface is then laid backwards from there. */
+.shelfc-plank {
+  position: absolute;
+  left: -6%;
+  width: 112%;
+  top: 100%;
+  height: 0;
+  transform-style: preserve-3d;
+  transform: translateZ(var(--front));
+}
+
+/* the surface the books stand on, hinged at the front edge and laid back */
+.shelfc-plank-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--depth);
+  transform-origin: 50% 0;
+  transform: rotateX(-90deg);
+  background: var(--plank);
+  background-image: radial-gradient(120% 90% at 50% 0%, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0) 62%);
+}
+
+/* the front edge. a shelf seen from near eye level is mostly this — without it
+   the board is a plane on edge and reads as nothing at all */
+.shelfc-plank-face {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--thick);
+  background: var(--plank);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(0, 0, 0, 0.14));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+/* contact shadow, lying on the board under each book and travelling out with
+   it. blurs and weakens as the book leaves the shelf */
+.shelfc-contact {
+  position: absolute;
+  left: 50%;
+  /* hinged at the book's base and laid BACKWARDS, exactly like the plank it
+     lies on. hinging at the bottom edge instead sends it out toward the viewer
+     — the shadow ends up in front of the book rather than under it. the -1px
+     keeps it off the board so the two coplanar surfaces can't z-fight. */
+  top: 100%;
+  width: calc(var(--t) + 26px);
+  height: calc(var(--w) * 0.9);
+  transform-origin: 50% 0;
+  transform: translate(-50%, -1px) translateZ(calc(var(--w) / 2)) rotateX(-90deg);
+  background: radial-gradient(
+    68% 62% at 50% 26%,
+    rgba(0, 0, 0, calc(var(--contact) * 0.75)),
+    rgba(0, 0, 0, 0) 74%
+  );
+  filter: blur(6px);
+  pointer-events: none;
+  transition: opacity var(--dur) var(--ease), filter var(--dur) var(--ease);
+}
+.shelfc-slot[data-on="true"] .shelfc-contact {
+  opacity: 0.55;
+  filter: blur(13px);
+}
+
+/* ---- caption ------------------------------------------------------------ */
+
+.shelfc-caption {
+  padding: 0 32px 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  opacity: 0.35;
+  transition: opacity 300ms ease;
+}
+.shelfc-caption[data-on="true"] { opacity: 1; }
+.shelfc-caption-title {
+  font-family: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+.shelfc-caption-meta {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+
+/* ---- notes layout ------------------------------------------------------- */
+
+/* An alternate reading: the open book leaves the row entirely and travels to a
+   fixed mark on the left, with the notes taking the right. The sidestep is
+   computed in JS against each slot's centre offset, so a book from either end
+   of the shelf lands in the same place. */
+
+.shelfc-notes {
+  position: absolute;
+  top: 50%;
+  right: var(--notes-x, 90px);
+  width: var(--notes-w);
+  max-width: 42vw;
+  transform: translateY(-50%);
+  z-index: 3;
+  pointer-events: none;
+
+  opacity: 0;
+  translate: 0 10px;
+  /* out: the close clock, no stagger — the text has to clear at the same time
+     the shelf comes back up, not linger behind it */
+  transition: opacity var(--dur-close) var(--ease-close) 0ms,
+    translate var(--dur-close) var(--ease-close) 0ms;
+}
+.shelfc-notes[data-on="true"] {
+  opacity: 1;
+  translate: 0 0;
+  /* in: arrives after the book has cleared the shelf and started turning,
+     rather than racing it across the screen */
+  transition: opacity var(--dur-open) var(--ease-open) var(--tdelay-open),
+    translate var(--dur-open) var(--ease-open) var(--tdelay-open);
+}
+
+.shelfc-notes-kicker {
+  margin: 0 0 14px;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  opacity: 0.5;
+}
+
+.shelfc-notes-title {
+  margin: 0 0 6px;
+  font-size: clamp(24px, 2.4vw, 38px);
+  font-weight: 600;
+  line-height: 1.06;
+  letter-spacing: -0.02em;
+}
+.shelfc-notes-title[data-serif="true"] {
+  font-family: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.shelfc-notes-meta {
+  margin: 0 0 22px;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+
+/* the one place on the page set for continuous reading, so it gets a serif, a
+   real measure, and looser leading than the mono furniture around it */
+.shelfc-notes-body {
+  margin: 0 0 14px;
+  max-width: 46ch;
+  font-family: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
+  font-size: 15px;
+  line-height: 1.62;
+  opacity: 0.82;
+}
+.shelfc-notes-body:last-child { margin-bottom: 0; }
+
+/* the shelf steps back so the reading column is the thing in focus. the open
+   book is a child of the row, so it has to be exempted or it dims too. */
+.shelfc-stage[data-notes="true"] .shelfc-slot:not([data-on="true"]) {
+  opacity: calc(1 - var(--dim));
+}
+
+/* the board recedes with the books, or the shelf reads as lit while everything
+   standing on it is in shadow.
+   Applied to the two leaf surfaces rather than to `.shelfc-plank` itself:
+   opacity is a grouping property, so setting it on the plank would force
+   `transform-style: flat` and collapse the laid-back top surface into the
+   plane of the front edge. */
+.shelfc-stage[data-notes="true"] .shelfc-plank-top,
+.shelfc-stage[data-notes="true"] .shelfc-plank-face {
+  opacity: calc(1 - var(--dim));
+}
+.shelfc-plank-top,
+.shelfc-plank-face {
+  transition: opacity var(--dur-close) var(--ease-close);
+}
+.shelfc-stage[data-notes="true"] .shelfc-plank-top,
+.shelfc-stage[data-notes="true"] .shelfc-plank-face {
+  transition: opacity var(--dur-open) var(--ease-open);
+}
