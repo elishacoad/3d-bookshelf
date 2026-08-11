@@ -3,7 +3,7 @@
 An interactive 3D bookshelf, 2 versions, one using DOM elements and CSS
 transforms, one in WebGL.
 
-> **Demo:** _**TODO** — link once deployed_
+> **Demo:** <https://3d-bookshelf-one.vercel.app>
 
 <!-- **TODO** — screenshots. Two side by side reads best: CSS left, WebGL right,
      both with the same book pulled out so the lighting difference is the only
