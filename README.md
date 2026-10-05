@@ -5,6 +5,8 @@ transforms, one in WebGL.
 
 > **Demo:** <https://3d-bookshelf-one.vercel.app>
 
+![The 3D bookshelf with Goodbye, Eri pulled forward, cover out](docs/bookshelf.gif)
+
 <!-- **TODO** — screenshots. Two side by side reads best: CSS left, WebGL right,
      both with the same book pulled out so the lighting difference is the only
      variable. Press `h` first to hide the tooling. -->
